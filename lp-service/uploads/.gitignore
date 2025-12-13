@@ -1,0 +1,8 @@
+# Temporary uploaded images for license plate recognition
+*.jpg
+*.jpeg
+*.png
+*.bmp
+
+# Keep the directory
+!.gitkeep

@@ -1,0 +1,9 @@
+# Gitignore for uploaded images
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.gif
+
+# Keep the directory
+!.gitkeep
