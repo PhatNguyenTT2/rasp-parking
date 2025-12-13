@@ -234,8 +234,17 @@ def recognize_from_picamera():
         from picamera_handler import get_picamera
         import base64
         
+        print("📸 Initializing Pi Camera for recognition...")
+        
         # Get camera and capture frame
         picam = get_picamera()
+        
+        if not picam.is_initialized:
+            return jsonify({
+                'success': False,
+                'error': 'Camera initialization failed'
+            }), 500
+        
         frame = picam.capture_frame()
         
         if frame is None:
@@ -331,8 +340,17 @@ def camera_preview():
         from picamera_handler import get_picamera
         import base64
         
+        print("📸 Initializing Pi Camera for preview...")
+        
         # Get camera and capture frame
         picam = get_picamera()
+        
+        if not picam.is_initialized:
+            return jsonify({
+                'success': False,
+                'error': 'Camera not initialized'
+            }), 500
+        
         frame = picam.capture_frame()
         
         if frame is None:

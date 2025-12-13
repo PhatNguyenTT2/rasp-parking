@@ -21,26 +21,34 @@ class PiCameraHandler:
         self.is_initialized = False
         
         try:
+            # Create Picamera2 instance
             self.picam = Picamera2()
             
-            # Configure camera - FullHD cho license plate detection
-            camera_config = self.picam.create_still_configuration(
-                main={"size": (1920, 1080), "format": "RGB888"},
-                buffer_count=2
+            # Use preview configuration instead of still (more compatible)
+            # and lower resolution for better performance
+            camera_config = self.picam.create_preview_configuration(
+                main={"size": (1280, 720), "format": "RGB888"}
             )
+            
+            # Configure camera
             self.picam.configure(camera_config)
             
-            # Start camera
+            # IMPORTANT: Start camera và đợi nó khởi tạo hoàn toàn
             self.picam.start()
             
-            # Warm up camera (chờ auto-exposure ổn định)
-            time.sleep(2)
+            # Warm up camera - đợi lâu hơn để allocator hoàn tất
+            print("⏳ Waiting for camera to warm up...")
+            time.sleep(3)
             
             self.is_initialized = True
             print("✅ Pi Camera initialized successfully!")
             
         except Exception as e:
             print(f"❌ Failed to initialize Pi Camera: {e}")
+            print("💡 Suggestions:")
+            print("   1. Check camera is enabled: sudo raspi-config -> Interface Options -> Camera")
+            print("   2. Check camera connection: libcamera-hello --list-cameras")
+            print("   3. Reboot Pi: sudo reboot")
             self.is_initialized = False
             if self.picam:
                 try:
