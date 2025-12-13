@@ -17,22 +17,37 @@ class PiCameraHandler:
         """Initialize Pi Camera"""
         print("🔧 Initializing Raspberry Pi Camera...")
         
-        self.picam = Picamera2()
+        self.picam = None
+        self.is_initialized = False
         
-        # Configure camera - FullHD cho license plate detection
-        camera_config = self.picam.create_still_configuration(
-            main={"size": (1920, 1080), "format": "RGB888"},
-            buffer_count=2
-        )
-        self.picam.configure(camera_config)
-        
-        # Start camera
-        self.picam.start()
-        
-        # Warm up camera (chờ auto-exposure ổn định)
-        time.sleep(2)
-        
-        print("✅ Pi Camera initialized successfully!")
+        try:
+            self.picam = Picamera2()
+            
+            # Configure camera - FullHD cho license plate detection
+            camera_config = self.picam.create_still_configuration(
+                main={"size": (1920, 1080), "format": "RGB888"},
+                buffer_count=2
+            )
+            self.picam.configure(camera_config)
+            
+            # Start camera
+            self.picam.start()
+            
+            # Warm up camera (chờ auto-exposure ổn định)
+            time.sleep(2)
+            
+            self.is_initialized = True
+            print("✅ Pi Camera initialized successfully!")
+            
+        except Exception as e:
+            print(f"❌ Failed to initialize Pi Camera: {e}")
+            self.is_initialized = False
+            if self.picam:
+                try:
+                    self.picam.close()
+                except:
+                    pass
+            raise
     
     def capture_frame(self):
         """
@@ -41,6 +56,10 @@ class PiCameraHandler:
         Returns:
             numpy.ndarray: OpenCV BGR image
         """
+        if not self.is_initialized or self.picam is None:
+            print("❌ Camera not initialized")
+            return None
+            
         try:
             # Capture RGB array
             rgb_array = self.picam.capture_array()
@@ -64,6 +83,10 @@ class PiCameraHandler:
         Returns:
             bool: Success status
         """
+        if not self.is_initialized or self.picam is None:
+            print("❌ Camera not initialized")
+            return False
+            
         try:
             self.picam.capture_file(filepath)
             return True
@@ -73,16 +96,25 @@ class PiCameraHandler:
     
     def close(self):
         """Release camera resources"""
+        if self.picam is None:
+            return
+            
         try:
-            self.picam.stop()
+            if self.is_initialized:
+                self.picam.stop()
             self.picam.close()
+            self.is_initialized = False
+            self.picam = None
             print("✅ Pi Camera closed")
         except Exception as e:
             print(f"⚠️ Warning closing camera: {e}")
     
     def __del__(self):
         """Destructor - ensure camera is released"""
-        self.close()
+        try:
+            self.close()
+        except:
+            pass
 
 
 def get_picamera():
@@ -100,23 +132,35 @@ def test_picamera():
     """Test Pi Camera capture"""
     print("\n🧪 Testing Pi Camera...")
     
-    camera = get_picamera()
-    
-    # Test capture
-    frame = camera.capture_frame()
-    
-    if frame is not None:
-        print(f"✅ Captured frame shape: {frame.shape}")
+    camera = None
+    try:
+        camera = get_picamera()
         
-        # Save test image
-        test_path = "test_picamera.jpg"
-        cv2.imwrite(test_path, frame)
-        print(f"✅ Test image saved: {test_path}")
+        if not camera.is_initialized:
+            print("❌ Camera initialization failed")
+            return False
         
-        return True
-    else:
-        print("❌ Failed to capture frame")
+        # Test capture
+        frame = camera.capture_frame()
+        
+        if frame is not None:
+            print(f"✅ Captured frame shape: {frame.shape}")
+            
+            # Save test image
+            test_path = "test_picamera.jpg"
+            cv2.imwrite(test_path, frame)
+            print(f"✅ Test image saved: {test_path}")
+            
+            return True
+        else:
+            print("❌ Failed to capture frame")
+            return False
+    except Exception as e:
+        print(f"❌ Test failed: {e}")
         return False
+    finally:
+        if camera:
+            camera.close()
 
 
 if __name__ == "__main__":
