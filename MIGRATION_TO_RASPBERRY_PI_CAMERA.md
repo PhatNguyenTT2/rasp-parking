@@ -90,19 +90,25 @@ python3 -c "from picamera2 import Picamera2; print('picamera2 OK')"
 # Clone repository từ GitHub
 git clone https://github.com/PhatNguyenTT2/rasp-parking.git 
 # Di chuyển vào thư mục project
-cd rasp-parking
 
 #### Bước 1.4: Cài Dependencies trên Pi
 ```bash
 # Trên Pi
 cd ~/rasp-parking/lp-service
+python3 -m venv venv
 source venv/bin/activate
 
-# Install requirements
+# Upgrade pip
+pip install --upgrade pip
+
+# Cài lightweight packages từ file mới
 pip install -r requirements.txt
 
-# QUAN TRỌNG: Nếu lỗi với torch, dùng version cho ARM:
+# Cài PyTorch riêng (ARM optimized)
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# Test lại Flask
+python api_server.py
 
 # Hoặc dùng model nano (nhẹ hơn cho Pi):
 # Đã có sẵn trong License-Plate-Recognition/model/
