@@ -264,6 +264,100 @@ def recognize_from_camera():
         }), 500
 
 
+@app.route('/api/recognize/picamera', methods=['POST'])
+def recognize_from_picamera():
+    """
+    Capture from Raspberry Pi Camera and recognize license plate
+    🆕 Endpoint specifically for Raspberry Pi Camera Module
+    
+    Response:
+        {
+            "success": true,
+            "data": {
+                "licensePlate": "59A1-2345",
+                "confidence": 0.95,
+                "imageData": "data:image/jpeg;base64,...",
+                "timestamp": "2025-12-13T10:30:00"
+            }
+        }
+    """
+    if not SERVICE_READY:
+        return jsonify({
+            'success': False,
+            'error': 'Recognition service not ready'
+        }), 503
+    
+    try:
+        # Recognize from Pi Camera
+        result = recognition_service.recognize_from_pi_camera()
+        
+        if result['success']:
+            response_data = {
+                'licensePlate': result['licensePlate'],
+                'confidence': result.get('confidence', 0),
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            return jsonify({
+                'success': True,
+                'data': response_data
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'Recognition failed')
+            }), 422
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/camera/test', methods=['GET'])
+def test_camera():
+    """
+    Test camera availability (PC webcam or Pi Camera)
+    """
+    import platform
+    
+    is_pi = platform.machine() in ['armv7l', 'aarch64']
+    
+    if is_pi:
+        try:
+            from picamera_handler import test_picamera
+            success = test_picamera()
+            return jsonify({
+                'success': success,
+                'camera_type': 'Raspberry Pi Camera',
+                'platform': platform.machine()
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': str(e),
+                'camera_type': 'Raspberry Pi Camera'
+            }), 500
+    else:
+        try:
+            import cv2
+            cap = cv2.VideoCapture(0)
+            success = cap.isOpened()
+            cap.release()
+            return jsonify({
+                'success': success,
+                'camera_type': 'PC Webcam',
+                'platform': platform.machine()
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': str(e),
+                'camera_type': 'PC Webcam'
+            }), 500
+
+
 @app.route('/api/test', methods=['GET'])
 def test_endpoint():
     """Test endpoint with sample image"""
@@ -323,20 +417,37 @@ def internal_error(error):
 
 
 if __name__ == '__main__':
+    import platform
+    
+    # Check if running on Raspberry Pi
+    is_pi = platform.machine() in ['armv7l', 'aarch64']
+    
     print("=" * 60)
     print("🚀 License Plate Recognition API Server")
     print("=" * 60)
-    print(f"📍 Base URL: http://localhost:5001")
+    
+    if is_pi:
+        print("🍓 Running on Raspberry Pi")
+        print("📡 Listening on all interfaces (0.0.0.0:5001)")
+        print(f"🔗 Access from PC: http://<pi-ip-address>:5001")
+        host = '0.0.0.0'
+    else:
+        print("💻 Running on PC")
+        print("📡 Listening on localhost:5001")
+        host = '127.0.0.1'
+    
     print(f"📍 Health Check: http://localhost:5001/health")
     print(f"📍 Recognize Endpoint: POST http://localhost:5001/api/recognize")
     print(f"📍 Camera Endpoint: POST http://localhost:5001/api/recognize/camera")
+    print(f"📍 Pi Camera Endpoint: POST http://localhost:5001/api/recognize/picamera")
+    print(f"📍 Camera Test: GET http://localhost:5001/api/camera/test")
     print(f"📍 Test Endpoint: GET http://localhost:5001/api/test")
     print("=" * 60)
     print()
     
     # Run Flask app
     app.run(
-        host='0.0.0.0',
+        host=host,
         port=5001,
         debug=True,
         threaded=True

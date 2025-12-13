@@ -20,6 +20,7 @@ function EntryLane({ latestEntry, allEntries, onEntryAdded }) {
   const [stream, setStream] = useState(null);
   const [liveRecognitionResult, setLiveRecognitionResult] = useState(null);
   const [isAutoScanning, setIsAutoScanning] = useState(false);
+  const [cameraType, setCameraType] = useState('unknown');
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const scanIntervalRef = useRef(null);
@@ -30,6 +31,21 @@ function EntryLane({ latestEntry, allEntries, onEntryAdded }) {
       setSelectedEntry(latestEntry);
     }
   }, [latestEntry]); // Depend on the whole object to catch all changes
+
+  // Test camera on mount
+  useEffect(() => {
+    const checkCamera = async () => {
+      try {
+        const result = await parkingLogService.testCamera();
+        if (result.success) {
+          setCameraType(result.data.cameraType);
+        }
+      } catch (error) {
+        console.error('Camera test error:', error);
+      }
+    };
+    checkCamera();
+  }, []);
 
   const handleEntryClick = async (entry) => {
     try {
@@ -127,6 +143,38 @@ function EntryLane({ latestEntry, allEntries, onEntryAdded }) {
       setIsRecognizing(false);
       // Reset file input
       e.target.value = '';
+    }
+  };
+
+  // Handle Pi Camera capture
+  const handlePiCameraCapture = async () => {
+    setIsRecognizing(true);
+    setError('');
+    setRecognitionError('');
+
+    try {
+      const result = await parkingLogService.recognizeFromPiCamera();
+
+      if (result.success) {
+        setFormData({
+          ...formData,
+          licensePlate: result.data.licensePlate,
+          imageData: result.data.imageData,
+          imageFile: null
+        });
+        setSuccess(
+          `Nhận diện từ Pi Camera: ${result.data.licensePlate} ` +
+          `(${(result.data.confidence * 100).toFixed(0)}%)`
+        );
+        setTimeout(() => setSuccess(''), 4000);
+      }
+    } catch (err) {
+      const errorMsg = err.response?.data?.error?.message ||
+        'Không thể chụp từ Pi Camera';
+      setRecognitionError(errorMsg);
+      setTimeout(() => setRecognitionError(''), 5000);
+    } finally {
+      setIsRecognizing(false);
     }
   };
 
@@ -369,6 +417,21 @@ function EntryLane({ latestEntry, allEntries, onEntryAdded }) {
                 <Camera size={16} />
                 Chụp Camera
               </button>
+
+              {cameraType.includes('Raspberry') && (
+                <button
+                  type="button"
+                  onClick={handlePiCameraCapture}
+                  disabled={isRecognizing}
+                  className={`flex-1 px-3 py-2 rounded-lg flex items-center justify-center gap-2 transition-all ${isRecognizing
+                    ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                    : 'bg-purple-500 text-white hover:bg-purple-600 hover:shadow-md'
+                    }`}
+                >
+                  <Camera size={16} />
+                  {isRecognizing ? 'Đang chụp...' : 'Chụp Pi Camera'}
+                </button>
+              )}
             </div>
           </div>
 

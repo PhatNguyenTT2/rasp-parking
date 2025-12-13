@@ -2,6 +2,7 @@ import cv2
 import torch
 import sys
 import os
+import platform
 
 # Add License-Plate-Recognition to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'License-Plate-Recognition'))
@@ -10,6 +11,19 @@ try:
     from function import helper
 except ImportError:
     print("Warning: Could not import helper module. Make sure License-Plate-Recognition is properly set up.")
+
+# Detect if running on Raspberry Pi
+IS_RASPBERRY_PI = platform.machine() in ['armv7l', 'aarch64']
+
+if IS_RASPBERRY_PI:
+    try:
+        from picamera_handler import get_picamera
+        print("🍓 Running on Raspberry Pi - Using picamera2")
+    except ImportError:
+        print("⚠️ picamera2 not available - Pi Camera features disabled")
+        IS_RASPBERRY_PI = False
+else:
+    print("💻 Running on PC - Using OpenCV VideoCapture")
 
 
 class LicensePlateRecognitionService:
@@ -116,6 +130,42 @@ class LicensePlateRecognitionService:
             return {
                 'success': False,
                 'error': str(e)
+            }
+    
+    def recognize_from_pi_camera(self):
+        """
+        Capture from Raspberry Pi Camera and recognize license plate
+        (Only works on Raspberry Pi)
+        
+        Returns:
+            dict: Recognition result
+        """
+        if not IS_RASPBERRY_PI:
+            return {
+                'success': False,
+                'error': 'This method only works on Raspberry Pi'
+            }
+        
+        try:
+            # Get Pi Camera
+            picam = get_picamera()
+            
+            # Capture frame
+            frame = picam.capture_frame()
+            
+            if frame is None:
+                return {
+                    'success': False,
+                    'error': 'Could not capture frame from Pi Camera'
+                }
+            
+            # Process with existing method
+            return self._process_image(frame)
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f'Pi Camera error: {str(e)}'
             }
     
     def _process_image(self, img):

@@ -553,4 +553,68 @@ parkingLogsRouter.delete('/:id', async (request, response) => {
   }
 });
 
+/**
+ * POST /api/parking/logs/recognize/pi-camera
+ * Capture and recognize from Raspberry Pi Camera
+ */
+parkingLogsRouter.post('/recognize/pi-camera', async (request, response) => {
+  try {
+    const result = await LicensePlateClient.recognizeFromPiCamera();
+
+    if (result.success) {
+      return response.json({
+        success: true,
+        data: {
+          licensePlate: result.licensePlate,
+          confidence: result.confidence,
+          imageData: result.imageData,
+          timestamp: result.timestamp
+        },
+        message: 'License plate captured from Pi Camera successfully'
+      });
+    } else {
+      return response.status(422).json({
+        success: false,
+        error: {
+          message: result.error || 'Failed to capture from Pi Camera'
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Pi Camera capture error:', error);
+    return response.status(500).json({
+      success: false,
+      error: {
+        message: 'Server error during Pi Camera capture'
+      }
+    });
+  }
+});
+
+/**
+ * GET /api/parking/logs/camera/test
+ * Test camera availability
+ */
+parkingLogsRouter.get('/camera/test', async (request, response) => {
+  try {
+    const result = await LicensePlateClient.testCamera();
+
+    return response.json({
+      success: result.success,
+      data: {
+        cameraType: result.cameraType,
+        platform: result.platform,
+        available: result.success
+      }
+    });
+  } catch (error) {
+    return response.status(500).json({
+      success: false,
+      error: {
+        message: error.message
+      }
+    });
+  }
+});
+
 module.exports = parkingLogsRouter;

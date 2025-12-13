@@ -182,6 +182,77 @@ class LicensePlateClient {
   }
 
   /**
+   * Recognize license plate from Raspberry Pi Camera
+   * @returns {Promise<Object>} Recognition result
+   */
+  static async recognizeFromPiCamera() {
+    try {
+      logger.info('Capturing from Raspberry Pi Camera for LP recognition')
+
+      const response = await axios.post(
+        `${LP_SERVICE_URL}/api/recognize/picamera`,
+        {},
+        { timeout: REQUEST_TIMEOUT }
+      )
+
+      if (response.data.success) {
+        logger.info(`Pi Camera LP recognized: ${response.data.data.licensePlate}`)
+        return {
+          success: true,
+          licensePlate: response.data.data.licensePlate,
+          confidence: response.data.data.confidence,
+          timestamp: response.data.data.timestamp,
+          imageData: response.data.data.imageData
+        }
+      } else {
+        logger.warn(`Pi Camera recognition failed: ${response.data.error}`)
+        return {
+          success: false,
+          error: response.data.error
+        }
+      }
+    } catch (error) {
+      logger.error('Pi Camera recognition error:', error.message)
+
+      if (error.code === 'ECONNREFUSED') {
+        return {
+          success: false,
+          error: 'Pi Camera service is not running'
+        }
+      }
+
+      return {
+        success: false,
+        error: error.response?.data?.error || error.message
+      }
+    }
+  }
+
+  /**
+   * Test camera availability
+   * @returns {Promise<Object>} Camera test result
+   */
+  static async testCamera() {
+    try {
+      const response = await axios.get(
+        `${LP_SERVICE_URL}/api/camera/test`,
+        { timeout: 5000 }
+      )
+
+      return {
+        success: response.data.success,
+        cameraType: response.data.camera_type,
+        platform: response.data.platform
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      }
+    }
+  }
+
+  /**
    * Get service URL configuration
    * @returns {string} Service URL
    */

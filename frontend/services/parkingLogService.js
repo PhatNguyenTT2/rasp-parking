@@ -413,6 +413,34 @@ const parkingLogService = {
       console.error('Error fetching parking statistics:', error)
       throw error
     }
+  },
+
+  /**
+   * Recognize from Raspberry Pi Camera
+   * @returns {Promise<Object>} Recognition result
+   */
+  recognizeFromPiCamera: async () => {
+    try {
+      const response = await axios.post(`${API_URL}/parking/logs/recognize/pi-camera`)
+      return response.data
+    } catch (error) {
+      console.error('Pi Camera recognition failed:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Test camera availability
+   * @returns {Promise<Object>} Camera test result
+   */
+  testCamera: async () => {
+    try {
+      const response = await axios.get(`${API_URL}/parking/logs/camera/test`)
+      return response.data
+    } catch (error) {
+      console.error('Camera test failed:', error)
+      throw error
+    }
   }
 }
 
