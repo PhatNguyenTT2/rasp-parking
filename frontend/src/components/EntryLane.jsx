@@ -16,14 +16,10 @@ function EntryLane({ latestEntry, allEntries, onEntryAdded }) {
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [isRecognizing, setIsRecognizing] = useState(false);
   const [recognitionError, setRecognitionError] = useState('');
-  const [showWebcam, setShowWebcam] = useState(false);
-  const [stream, setStream] = useState(null);
-  const [liveRecognitionResult, setLiveRecognitionResult] = useState(null);
-  const [isAutoScanning, setIsAutoScanning] = useState(false);
   const [cameraType, setCameraType] = useState('unknown');
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const scanIntervalRef = useRef(null);
+  const [showPiCameraPreview, setShowPiCameraPreview] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 
   // Tự động cập nhật selectedEntry khi có xe mới vào (latestEntry thay đổi)
   useEffect(() => {
@@ -146,7 +142,44 @@ function EntryLane({ latestEntry, allEntries, onEntryAdded }) {
     }
   };
 
-  // Handle Pi Camera capture
+  // Open Pi Camera Preview
+  const openPiCameraPreview = () => {
+    setShowPiCameraPreview(true);
+    setRecognitionError('');
+    startPreviewLoop();
+  };
+
+  // Close Pi Camera Preview
+  const closePiCameraPreview = () => {
+    setShowPiCameraPreview(false);
+    setPreviewImage(null);
+    setIsLoadingPreview(false);
+  };
+
+  // Start preview loop to refresh camera feed
+  const startPreviewLoop = async () => {
+    if (!showPiCameraPreview && previewImage) return;
+
+    setIsLoadingPreview(true);
+    try {
+      const result = await parkingLogService.getPiCameraPreview();
+      if (result.success && result.data.imageData) {
+        setPreviewImage(result.data.imageData);
+      }
+    } catch (err) {
+      console.error('Preview error:', err);
+      setRecognitionError('Không thể lấy preview từ camera');
+    } finally {
+      setIsLoadingPreview(false);
+    }
+
+    // Auto refresh every 500ms for live preview
+    if (showPiCameraPreview) {
+      setTimeout(startPreviewLoop, 500);
+    }
+  };
+
+  // Handle Pi Camera capture with preview
   const handlePiCameraCapture = async () => {
     setIsRecognizing(true);
     setError('');
@@ -167,6 +200,7 @@ function EntryLane({ latestEntry, allEntries, onEntryAdded }) {
           `(${(result.data.confidence * 100).toFixed(0)}%)`
         );
         setTimeout(() => setSuccess(''), 4000);
+        closePiCameraPreview();
       }
     } catch (err) {
       const errorMsg = err.response?.data?.error?.message ||
@@ -178,160 +212,7 @@ function EntryLane({ latestEntry, allEntries, onEntryAdded }) {
     }
   };
 
-  // Open webcam dialog
-  const openWebcam = async () => {
-    setShowWebcam(true);
-    setRecognitionError('');
 
-    try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        }
-      });
-      setStream(mediaStream);
-
-      // Set video stream after a short delay to ensure ref is ready
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = mediaStream;
-        }
-      }, 100);
-
-      // Auto-start scanning after a short delay
-      setTimeout(() => {
-        setIsAutoScanning(true);
-        scanIntervalRef.current = setInterval(performAutoScan, 2000);
-      }, 1000);
-    } catch (err) {
-      console.error('Camera access error:', err);
-      setRecognitionError('Không thể truy cập camera. Vui lòng cho phép quyền camera trong trình duyệt.');
-      setShowWebcam(false);
-    }
-  };
-
-  // Close webcam and stop stream
-  const closeWebcam = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
-    }
-    if (scanIntervalRef.current) {
-      clearInterval(scanIntervalRef.current);
-      scanIntervalRef.current = null;
-    }
-    setShowWebcam(false);
-    setLiveRecognitionResult(null);
-    setIsAutoScanning(false);
-  };
-
-  // Capture photo from webcam
-  const capturePhoto = async () => {
-    if (!videoRef.current || !canvasRef.current) return;
-
-    setIsRecognizing(true);
-    setRecognitionError('');
-
-    try {
-      // Draw video frame to canvas
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0);
-
-      // Convert canvas to blob
-      canvas.toBlob(async (blob) => {
-        try {
-          // Create file from blob
-          const file = new File([blob], 'webcam-capture.jpg', { type: 'image/jpeg' });
-
-          // Send to recognition service
-          const result = await parkingLogService.recognizeFromImage(file);
-
-          if (result.success) {
-            // Auto-fill license plate and image
-            setFormData({
-              ...formData,
-              licensePlate: result.data.licensePlate,
-              imageData: result.data.imageData,
-              imageFile: file
-            });
-            setSuccess(`Chụp và nhận diện thành công: ${result.data.licensePlate} (độ tin cậy: ${(result.data.confidence * 100).toFixed(0)}%)`);
-            setTimeout(() => setSuccess(''), 4000);
-            closeWebcam();
-          }
-        } catch (err) {
-          const errorMsg = err.response?.data?.error?.message || 'Không thể nhận diện biển số từ ảnh';
-          setRecognitionError(errorMsg);
-          setTimeout(() => setRecognitionError(''), 5000);
-          console.error('Recognition error:', err);
-        } finally {
-          setIsRecognizing(false);
-        }
-      }, 'image/jpeg', 0.95);
-    } catch (err) {
-      setRecognitionError('Lỗi khi chụp ảnh từ webcam');
-      setIsRecognizing(false);
-      console.error('Capture error:', err);
-    }
-  };
-
-  // Auto-scan function for live recognition
-  const performAutoScan = async () => {
-    if (!videoRef.current || !canvasRef.current || isRecognizing) return;
-
-    try {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0);
-
-      // Convert canvas to blob
-      canvas.toBlob(async (blob) => {
-        try {
-          const file = new File([blob], 'auto-scan.jpg', { type: 'image/jpeg' });
-          const result = await parkingLogService.recognizeFromImage(file);
-
-          if (result.success && result.data.licensePlate) {
-            setLiveRecognitionResult({
-              licensePlate: result.data.licensePlate,
-              confidence: result.data.confidence
-            });
-          } else {
-            setLiveRecognitionResult(null);
-          }
-        } catch (err) {
-          // Silently fail for auto-scan
-          setLiveRecognitionResult(null);
-        }
-      }, 'image/jpeg', 0.8); // Lower quality for faster processing
-    } catch (err) {
-      console.error('Auto-scan error:', err);
-    }
-  };
-
-  // Toggle auto-scanning
-  const toggleAutoScan = () => {
-    if (isAutoScanning) {
-      // Stop auto-scan
-      if (scanIntervalRef.current) {
-        clearInterval(scanIntervalRef.current);
-        scanIntervalRef.current = null;
-      }
-      setIsAutoScanning(false);
-      setLiveRecognitionResult(null);
-    } else {
-      // Start auto-scan
-      setIsAutoScanning(true);
-      scanIntervalRef.current = setInterval(performAutoScan, 2000); // Scan every 2 seconds
-    }
-  };
 
   const formatTime = (dateString) => {
     if (!dateString) return 'N/A';
@@ -407,31 +288,16 @@ function EntryLane({ latestEntry, allEntries, onEntryAdded }) {
 
               <button
                 type="button"
-                onClick={openWebcam}
+                onClick={openPiCameraPreview}
                 disabled={isRecognizing}
                 className={`flex-1 px-3 py-2 rounded-lg flex items-center justify-center gap-2 transition-all ${isRecognizing
                   ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                  : 'bg-green-500 text-white hover:bg-green-600 hover:shadow-md'
+                  : 'bg-purple-500 text-white hover:bg-purple-600 hover:shadow-md'
                   }`}
               >
                 <Camera size={16} />
-                Chụp Camera
+                {isRecognizing ? 'Đang chụp...' : 'Mở Pi Camera'}
               </button>
-
-              {cameraType.includes('Raspberry') && (
-                <button
-                  type="button"
-                  onClick={handlePiCameraCapture}
-                  disabled={isRecognizing}
-                  className={`flex-1 px-3 py-2 rounded-lg flex items-center justify-center gap-2 transition-all ${isRecognizing
-                    ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                    : 'bg-purple-500 text-white hover:bg-purple-600 hover:shadow-md'
-                    }`}
-                >
-                  <Camera size={16} />
-                  {isRecognizing ? 'Đang chụp...' : 'Chụp Pi Camera'}
-                </button>
-              )}
             </div>
           </div>
 
@@ -491,18 +357,20 @@ function EntryLane({ latestEntry, allEntries, onEntryAdded }) {
         </div>
       )}
 
-      {/* Webcam Modal */}
-      {showWebcam && (
+
+
+      {/* Pi Camera Preview Modal */}
+      {showPiCameraPreview && (
         <div className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-hidden shadow-2xl">
-            <div className="bg-green-600 text-white p-4 flex items-center justify-between">
+            <div className="bg-purple-600 text-white p-4 flex items-center justify-between">
               <h3 className="text-lg font-semibold flex items-center gap-2">
                 <Camera size={20} />
-                Chụp Camera & Nhận Diện
+                Pi Camera Preview
               </h3>
               <button
-                onClick={closeWebcam}
-                className="text-white hover:bg-green-700 p-2 rounded-lg transition-colors"
+                onClick={closePiCameraPreview}
+                className="text-white hover:bg-purple-700 p-2 rounded-lg transition-colors"
               >
                 <X size={20} />
               </button>
@@ -516,49 +384,40 @@ function EntryLane({ latestEntry, allEntries, onEntryAdded }) {
               )}
 
               <div className="relative bg-black rounded-lg overflow-hidden mb-4">
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  className="w-full h-auto"
-                  style={{ maxHeight: '60vh' }}
-                />
-                <canvas ref={canvasRef} className="hidden" />
+                {previewImage ? (
+                  <img
+                    src={previewImage}
+                    alt="Pi Camera Preview"
+                    className="w-full h-auto"
+                    style={{ maxHeight: '60vh' }}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-96">
+                    <div className="text-white text-center">
+                      <div className="animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent mx-auto mb-3"></div>
+                      <p>Đang khởi động camera...</p>
+                    </div>
+                  </div>
+                )}
 
-                {/* Capture overlay guide */}
+                {/* Live indicator */}
+                {previewImage && (
+                  <div className="absolute top-4 right-4">
+                    <div className="bg-red-500 text-white px-3 py-1 rounded-full text-xs flex items-center gap-2">
+                      <span className="w-2 h-2 bg-white rounded-full animate-pulse"></span>
+                      LIVE
+                    </div>
+                  </div>
+                )}
+
+                {/* Camera frame guide */}
                 <div className="absolute inset-0 pointer-events-none">
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <div className={`border-4 rounded-lg w-3/4 h-1/2 transition-colors ${liveRecognitionResult ? 'border-green-400 shadow-lg shadow-green-400/50' : 'border-green-400 opacity-50'
-                      }`}></div>
+                    <div className="border-4 border-purple-400 rounded-lg w-3/4 h-1/2 opacity-50"></div>
                   </div>
-
-                  {/* Live Recognition Result */}
-                  {liveRecognitionResult && (
-                    <div className="absolute top-4 left-0 right-0 flex justify-center">
-                      <div className="bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 animate-pulse">
-                        <span className="text-2xl font-bold tracking-wider">
-                          {liveRecognitionResult.licensePlate}
-                        </span>
-                        <span className="text-sm opacity-90">
-                          ({(liveRecognitionResult.confidence * 100).toFixed(0)}%)
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Auto-scan indicator */}
-                  {isAutoScanning && (
-                    <div className="absolute top-4 right-4">
-                      <div className="bg-blue-500 text-white px-3 py-1 rounded-full text-xs flex items-center gap-2">
-                        <span className="w-2 h-2 bg-white rounded-full animate-pulse"></span>
-                        Đang quét...
-                      </div>
-                    </div>
-                  )}
-
                   <div className="absolute bottom-4 left-0 right-0 text-center">
                     <p className="text-white text-sm bg-black bg-opacity-50 inline-block px-3 py-1 rounded">
-                      {isAutoScanning ? 'Quét tự động đang hoạt động' : 'Đặt biển số xe vào khung hình'}
+                      Đặt biển số xe vào khung hình
                     </p>
                   </div>
                 </div>
@@ -566,20 +425,20 @@ function EntryLane({ latestEntry, allEntries, onEntryAdded }) {
 
               <div className="flex gap-3">
                 <button
-                  onClick={closeWebcam}
+                  onClick={closePiCameraPreview}
                   className="flex-1 px-4 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors font-medium"
                 >
                   Hủy
                 </button>
                 <button
-                  onClick={capturePhoto}
-                  disabled={isRecognizing}
-                  className={`flex-1 px-4 py-3 rounded-lg font-medium transition-all ${isRecognizing
-                    ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                    : 'bg-green-600 text-white hover:bg-green-700 hover:shadow-lg'
+                  onClick={handlePiCameraCapture}
+                  disabled={isRecognizing || !previewImage}
+                  className={`flex-1 px-4 py-3 rounded-lg font-medium transition-all ${isRecognizing || !previewImage
+                      ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                      : 'bg-purple-600 text-white hover:bg-purple-700 hover:shadow-lg'
                     }`}
                 >
-                  {isRecognizing ? 'Đang nhận diện...' : 'Chụp & Xác Nhận'}
+                  {isRecognizing ? 'Đang nhận diện...' : 'Chụp & Nhận Diện'}
                 </button>
               </div>
             </div>

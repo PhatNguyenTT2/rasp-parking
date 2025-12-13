@@ -17,10 +17,6 @@ function ExitLane({ onExitProcessed }) {
   const [isConfirming, setIsConfirming] = useState(false);
   const [isRecognizing, setIsRecognizing] = useState(false);
   const [recognitionError, setRecognitionError] = useState('');
-  const [showWebcam, setShowWebcam] = useState(false);
-  const [stream, setStream] = useState(null);
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -110,93 +106,7 @@ function ExitLane({ onExitProcessed }) {
     }
   };
 
-  // Open webcam dialog
-  const openWebcam = async () => {
-    setShowWebcam(true);
-    setRecognitionError('');
 
-    try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        }
-      });
-      setStream(mediaStream);
-
-      // Set video stream after a short delay to ensure ref is ready
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = mediaStream;
-        }
-      }, 100);
-    } catch (err) {
-      console.error('Camera access error:', err);
-      setRecognitionError('Không thể truy cập camera. Vui lòng cho phép quyền camera trong trình duyệt.');
-      setShowWebcam(false);
-    }
-  };
-
-  // Close webcam and stop stream
-  const closeWebcam = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
-    }
-    setShowWebcam(false);
-  };
-
-  // Capture photo from webcam
-  const capturePhoto = async () => {
-    if (!videoRef.current || !canvasRef.current) return;
-
-    setIsRecognizing(true);
-    setRecognitionError('');
-
-    try {
-      // Draw video frame to canvas
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0);
-
-      // Convert canvas to blob
-      canvas.toBlob(async (blob) => {
-        try {
-          // Create file from blob
-          const file = new File([blob], 'webcam-capture.jpg', { type: 'image/jpeg' });
-
-          // Send to recognition service
-          const result = await parkingLogService.recognizeFromImage(file);
-
-          if (result.success) {
-            // Auto-fill exit license plate and image
-            setFormData({
-              ...formData,
-              exitLicensePlate: result.data.licensePlate,
-              exitImageData: result.data.imageData,
-              exitImageFile: file
-            });
-            closeWebcam();
-          }
-        } catch (err) {
-          const errorMsg = err.response?.data?.error?.message || 'Không thể nhận diện biển số từ ảnh';
-          setRecognitionError(errorMsg);
-          setTimeout(() => setRecognitionError(''), 5000);
-          console.error('Recognition error:', err);
-        } finally {
-          setIsRecognizing(false);
-        }
-      }, 'image/jpeg', 0.95);
-    } catch (err) {
-      setRecognitionError('Lỗi khi chụp ảnh từ webcam');
-      setIsRecognizing(false);
-      console.error('Capture error:', err);
-    }
-  };
 
   const formatTime = (dateString) => {
     if (!dateString) return 'N/A';
@@ -261,75 +171,7 @@ function ExitLane({ onExitProcessed }) {
         <h2 className="text-xl font-semibold">Làn Ra - Xe Máy</h2>
       </div>
 
-      {/* Webcam Modal */}
-      {showWebcam && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-hidden shadow-2xl">
-            <div className="bg-green-600 text-white p-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <Camera size={20} />
-                Chụp Camera & Nhận Diện (Exit)
-              </h3>
-              <button
-                onClick={closeWebcam}
-                className="text-white hover:bg-green-700 p-2 rounded-lg transition-colors"
-              >
-                <X size={20} />
-              </button>
-            </div>
 
-            <div className="p-4">
-              {recognitionError && (
-                <div className="mb-3 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
-                  ⚠️ {recognitionError}
-                </div>
-              )}
-
-              <div className="relative bg-black rounded-lg overflow-hidden mb-4">
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  className="w-full h-auto"
-                  style={{ maxHeight: '60vh' }}
-                />
-                <canvas ref={canvasRef} className="hidden" />
-
-                {/* Capture overlay guide */}
-                <div className="absolute inset-0 pointer-events-none">
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="border-4 border-green-400 rounded-lg w-3/4 h-1/2 opacity-50"></div>
-                  </div>
-                  <div className="absolute bottom-4 left-0 right-0 text-center">
-                    <p className="text-white text-sm bg-black bg-opacity-50 inline-block px-3 py-1 rounded">
-                      Đặt biển số xe vào khung hình
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={closeWebcam}
-                  className="flex-1 px-4 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors font-medium"
-                >
-                  Hủy
-                </button>
-                <button
-                  onClick={capturePhoto}
-                  disabled={isRecognizing}
-                  className={`flex-1 px-4 py-3 rounded-lg font-medium transition-all ${isRecognizing
-                    ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                    : 'bg-green-600 text-white hover:bg-green-700 hover:shadow-lg'
-                    }`}
-                >
-                  {isRecognizing ? 'Đang nhận diện...' : 'Chụp & Nhận Diện'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto">
@@ -391,19 +233,6 @@ function ExitLane({ onExitProcessed }) {
                       {isRecognizing ? 'Đang nhận diện...' : 'Upload Ảnh'}
                     </div>
                   </label>
-
-                  <button
-                    type="button"
-                    onClick={openWebcam}
-                    disabled={isRecognizing || isProcessing}
-                    className={`flex-1 px-3 py-2 rounded-lg flex items-center justify-center gap-2 transition-all text-sm ${isRecognizing || isProcessing
-                      ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                      : 'bg-green-500 text-white hover:bg-green-600 hover:shadow-md'
-                      }`}
-                  >
-                    <Camera size={16} />
-                    Chụp Camera
-                  </button>
                 </div>
               </div>
 

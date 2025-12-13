@@ -85,22 +85,14 @@ class PiCameraHandler:
         self.close()
 
 
-# Singleton instance
-_picamera_instance = None
-
 def get_picamera():
     """
-    Get singleton Pi Camera instance
+    Create new Pi Camera instance (no singleton to avoid camera lock)
     
     Returns:
         PiCameraHandler: Camera handler
     """
-    global _picamera_instance
-    
-    if _picamera_instance is None:
-        _picamera_instance = PiCameraHandler()
-    
-    return _picamera_instance
+    return PiCameraHandler()
 
 
 # Test function

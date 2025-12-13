@@ -253,6 +253,37 @@ class LicensePlateClient {
   }
 
   /**
+   * Get Pi Camera preview frame
+   * @returns {Promise<Object>} Preview image data
+   */
+  static async getPiCameraPreview() {
+    try {
+      const response = await axios.get(
+        `${LP_SERVICE_URL}/api/camera/preview`,
+        { timeout: 5000 }
+      )
+
+      if (response.data.success) {
+        return {
+          success: true,
+          imageData: response.data.imageData,
+          timestamp: response.data.timestamp
+        }
+      } else {
+        return {
+          success: false,
+          error: response.data.error
+        }
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      }
+    }
+  }
+
+  /**
    * Get service URL configuration
    * @returns {string} Service URL
    */

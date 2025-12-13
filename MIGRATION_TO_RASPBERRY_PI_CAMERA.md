@@ -82,6 +82,14 @@ sudo apt install -y python3-picamera2
 # Kiểm tra picamera2
 python3 -c "from picamera2 import Picamera2; print('picamera2 OK')"
 ```
+# Trong venv
+cd ~/rasp-parking/License-Plate-Recognition
+
+# Cài requirements (bỏ qua opencv-python vì conflict với system opencv)
+pip install matplotlib numpy Pillow tqdm pyyaml requests pandas seaborn yolov5
+
+# Cài PyTorch riêng
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
 #### Bước 1.3: Copy Project Files sang Pi
 
@@ -101,7 +109,6 @@ source venv/bin/activate
 # Upgrade pip
 pip install --upgrade pip
 
-# Cài lightweight packages từ file mới
 pip install -r requirements.txt
 
 # Cài PyTorch riêng (ARM optimized)

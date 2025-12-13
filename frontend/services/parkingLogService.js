@@ -441,6 +441,20 @@ const parkingLogService = {
       console.error('Camera test failed:', error)
       throw error
     }
+  },
+
+  /**
+   * Get Pi Camera preview frame
+   * @returns {Promise<Object>} Preview image data
+   */
+  getPiCameraPreview: async () => {
+    try {
+      const response = await axios.get(`${API_URL}/parking/logs/camera/preview`)
+      return response.data
+    } catch (error) {
+      console.error('Camera preview failed:', error)
+      throw error
+    }
   }
 }
 

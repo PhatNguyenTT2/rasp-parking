@@ -617,4 +617,38 @@ parkingLogsRouter.get('/camera/test', async (request, response) => {
   }
 });
 
+/**
+ * GET /api/parking/logs/camera/preview
+ * Get preview frame from Pi Camera
+ */
+parkingLogsRouter.get('/camera/preview', async (request, response) => {
+  try {
+    const result = await LicensePlateClient.getPiCameraPreview();
+
+    if (result.success) {
+      return response.json({
+        success: true,
+        data: {
+          imageData: result.imageData,
+          timestamp: result.timestamp
+        }
+      });
+    } else {
+      return response.status(500).json({
+        success: false,
+        error: {
+          message: result.error || 'Failed to get camera preview'
+        }
+      });
+    }
+  } catch (error) {
+    return response.status(500).json({
+      success: false,
+      error: {
+        message: error.message
+      }
+    });
+  }
+});
+
 module.exports = parkingLogsRouter;

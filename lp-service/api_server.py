@@ -206,64 +206,6 @@ def recognize_license_plate():
         }), 500
 
 
-@app.route('/api/recognize/camera', methods=['POST'])
-def recognize_from_camera():
-    """
-    Capture image from camera and recognize license plate
-    
-    Request:
-        {
-            "cameraId": 0  // optional, default 0
-        }
-    
-    Response:
-        {
-            "success": true,
-            "data": {
-                "licensePlate": "59A1-2345",
-                "confidence": 0.92,
-                "timestamp": "2025-12-08T10:30:00"
-            }
-        }
-    """
-    if not SERVICE_READY:
-        return jsonify({
-            'success': False,
-            'error': 'Recognition service not ready'
-        }), 503
-    
-    try:
-        # Get camera ID from request
-        camera_id = 0
-        if request.is_json and 'cameraId' in request.json:
-            camera_id = int(request.json['cameraId'])
-        
-        # Capture and recognize
-        result = recognition_service.recognize_from_camera(camera_id)
-        
-        if result['success']:
-            return jsonify({
-                'success': True,
-                'data': {
-                    'licensePlate': result['licensePlate'],
-                    'confidence': result.get('confidence', 0),
-                    'timestamp': datetime.now().isoformat()
-                }
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'error': result.get('error', 'Camera capture failed')
-            }), 422
-            
-    except Exception as e:
-        print(f"Error in /api/recognize/camera: {e}")
-        return jsonify({
-            'success': False,
-            'error': f'Internal server error: {str(e)}'
-        }), 500
-
-
 @app.route('/api/recognize/picamera', methods=['POST'])
 def recognize_from_picamera():
     """
@@ -287,14 +229,37 @@ def recognize_from_picamera():
             'error': 'Recognition service not ready'
         }), 503
     
+    picam = None
     try:
-        # Recognize from Pi Camera
-        result = recognition_service.recognize_from_pi_camera()
+        from picamera_handler import get_picamera
+        import base64
+        
+        # Get camera and capture frame
+        picam = get_picamera()
+        frame = picam.capture_frame()
+        
+        if frame is None:
+            return jsonify({
+                'success': False,
+                'error': 'Could not capture frame from Pi Camera'
+            }), 500
+        
+        # Process with recognition service
+        result = recognition_service._process_image(frame)
         
         if result['success']:
+            # Encode frame as base64 for response
+            success, buffer = cv2.imencode('.jpg', frame)
+            if success:
+                jpg_base64 = base64.b64encode(buffer).decode('utf-8')
+                image_data = f'data:image/jpeg;base64,{jpg_base64}'
+            else:
+                image_data = None
+            
             response_data = {
                 'licensePlate': result['licensePlate'],
                 'confidence': result.get('confidence', 0),
+                'imageData': image_data,
                 'timestamp': datetime.now().isoformat()
             }
             
@@ -313,49 +278,98 @@ def recognize_from_picamera():
             'success': False,
             'error': str(e)
         }), 500
+    finally:
+        # Always release camera after use
+        if picam:
+            try:
+                picam.close()
+            except:
+                pass
 
 
 @app.route('/api/camera/test', methods=['GET'])
 def test_camera():
     """
-    Test camera availability (PC webcam or Pi Camera)
+    Test Pi Camera availability
+    """
+    import platform
+    
+    try:
+        from picamera_handler import test_picamera
+        success = test_picamera()
+        return jsonify({
+            'success': success,
+            'camera_type': 'Raspberry Pi Camera',
+            'platform': platform.machine()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'camera_type': 'Raspberry Pi Camera'
+        }), 500
+
+
+@app.route('/api/camera/preview', methods=['GET'])
+def camera_preview():
+    """
+    Get preview frame from Pi Camera as base64 image
+    Used for live preview before capture
     """
     import platform
     
     is_pi = platform.machine() in ['armv7l', 'aarch64']
     
-    if is_pi:
-        try:
-            from picamera_handler import test_picamera
-            success = test_picamera()
-            return jsonify({
-                'success': success,
-                'camera_type': 'Raspberry Pi Camera',
-                'platform': platform.machine()
-            })
-        except Exception as e:
-            return jsonify({
-                'success': False,
-                'error': str(e),
-                'camera_type': 'Raspberry Pi Camera'
-            }), 500
-    else:
-        try:
-            import cv2
-            cap = cv2.VideoCapture(0)
-            success = cap.isOpened()
-            cap.release()
-            return jsonify({
-                'success': success,
-                'camera_type': 'PC Webcam',
-                'platform': platform.machine()
-            })
-        except Exception as e:
+    if not is_pi:
+        return jsonify({
+            'success': False,
+            'error': 'Preview only works on Raspberry Pi'
+        }), 400
+    
+    picam = None
+    try:
+        from picamera_handler import get_picamera
+        import base64
+        
+        # Get camera and capture frame
+        picam = get_picamera()
+        frame = picam.capture_frame()
+        
+        if frame is None:
             return jsonify({
                 'success': False,
-                'error': str(e),
-                'camera_type': 'PC Webcam'
+                'error': 'Could not capture preview frame'
             }), 500
+        
+        # Encode frame as JPEG
+        success, buffer = cv2.imencode('.jpg', frame)
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': 'Could not encode frame'
+            }), 500
+        
+        # Convert to base64
+        jpg_base64 = base64.b64encode(buffer).decode('utf-8')
+        
+        return jsonify({
+            'success': True,
+            'imageData': f'data:image/jpeg;base64,{jpg_base64}',
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+    finally:
+        # Always release camera after use
+        if picam:
+            try:
+                picam.close()
+            except:
+                pass
 
 
 @app.route('/api/test', methods=['GET'])
@@ -438,9 +452,9 @@ if __name__ == '__main__':
     
     print(f"📍 Health Check: http://localhost:5001/health")
     print(f"📍 Recognize Endpoint: POST http://localhost:5001/api/recognize")
-    print(f"📍 Camera Endpoint: POST http://localhost:5001/api/recognize/camera")
     print(f"📍 Pi Camera Endpoint: POST http://localhost:5001/api/recognize/picamera")
     print(f"📍 Camera Test: GET http://localhost:5001/api/camera/test")
+    print(f"📍 Camera Preview: GET http://localhost:5001/api/camera/preview")
     print(f"📍 Test Endpoint: GET http://localhost:5001/api/test")
     print("=" * 60)
     print()
