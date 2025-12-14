@@ -21,6 +21,9 @@ function EntryLane({ latestEntry, allEntries, onEntryAdded }) {
   const [previewImage, setPreviewImage] = useState(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 
+  // Ref to track preview interval
+  const previewIntervalRef = useRef(null);
+
   // Tự động cập nhật selectedEntry khi có xe mới vào (latestEntry thay đổi)
   useEffect(() => {
     if (latestEntry) {
@@ -142,50 +145,107 @@ function EntryLane({ latestEntry, allEntries, onEntryAdded }) {
     }
   };
 
-  // Open Pi Camera Preview
-  const openPiCameraPreview = () => {
+  // 🎬 Open Pi Camera Preview - Start session once
+  const openPiCameraPreview = async () => {
     setShowPiCameraPreview(true);
     setRecognitionError('');
-    startPreviewLoop();
+    setIsLoadingPreview(true);
+
+    try {
+      // Start preview session (camera stays open)
+      console.log('🎬 Starting preview session...');
+      const startResult = await parkingLogService.startPiCameraPreview();
+
+      if (startResult.success) {
+        console.log('✅ Preview session started');
+        // Start frame polling loop
+        startPreviewLoop();
+      } else {
+        throw new Error(startResult.error || 'Failed to start preview');
+      }
+    } catch (err) {
+      console.error('Failed to start preview:', err);
+      setRecognitionError('Không thể khởi động camera preview');
+      setShowPiCameraPreview(false);
+    } finally {
+      setIsLoadingPreview(false);
+    }
   };
 
-  // Close Pi Camera Preview
-  const closePiCameraPreview = () => {
+  // 🛑 Close Pi Camera Preview - Stop session
+  const closePiCameraPreview = async () => {
+    console.log('🛑 Stopping preview session...');
+
+    // Stop polling loop
+    if (previewIntervalRef.current) {
+      clearInterval(previewIntervalRef.current);
+      previewIntervalRef.current = null;
+    }
+
+    // Stop preview session (close camera)
+    try {
+      await parkingLogService.stopPiCameraPreview();
+      console.log('✅ Preview session stopped');
+    } catch (err) {
+      console.error('Error stopping preview:', err);
+    }
+
     setShowPiCameraPreview(false);
     setPreviewImage(null);
     setIsLoadingPreview(false);
   };
 
-  // Start preview loop to refresh camera feed
-  const startPreviewLoop = async () => {
-    if (!showPiCameraPreview && previewImage) return;
+  // 📸 Start preview loop - Get frames from active session
+  const startPreviewLoop = () => {
+    // Clear any existing interval
+    if (previewIntervalRef.current) {
+      clearInterval(previewIntervalRef.current);
+    }
 
-    setIsLoadingPreview(true);
+    // Fetch frame immediately
+    fetchPreviewFrame();
+
+    // Set up interval to fetch frames every 200ms (5 FPS)
+    previewIntervalRef.current = setInterval(() => {
+      fetchPreviewFrame();
+    }, 200);
+  };
+
+  // Fetch single preview frame from session
+  const fetchPreviewFrame = async () => {
     try {
-      const result = await parkingLogService.getPiCameraPreview();
+      const result = await parkingLogService.getPiCameraPreviewFrame();
+
       if (result.success && result.data.imageData) {
         setPreviewImage(result.data.imageData);
       }
     } catch (err) {
-      console.error('Preview error:', err);
-      setRecognitionError('Không thể lấy preview từ camera');
-    } finally {
-      setIsLoadingPreview(false);
-    }
-
-    // Auto refresh every 500ms for live preview
-    if (showPiCameraPreview) {
-      setTimeout(startPreviewLoop, 500);
+      console.error('Preview frame error:', err);
+      // Don't show error for each failed frame - just log it
     }
   };
 
-  // Handle Pi Camera capture with preview
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (previewIntervalRef.current) {
+        clearInterval(previewIntervalRef.current);
+      }
+      // Stop preview session if still active
+      if (showPiCameraPreview) {
+        parkingLogService.stopPiCameraPreview().catch(console.error);
+      }
+    };
+  }, [showPiCameraPreview]);
+
+  // 📸 Handle Pi Camera capture with preview
   const handlePiCameraCapture = async () => {
     setIsRecognizing(true);
     setError('');
     setRecognitionError('');
 
     try {
+      // Use Pi Camera recognition endpoint
       const result = await parkingLogService.recognizeFromPiCamera();
 
       if (result.success) {
@@ -200,7 +260,9 @@ function EntryLane({ latestEntry, allEntries, onEntryAdded }) {
           `(${(result.data.confidence * 100).toFixed(0)}%)`
         );
         setTimeout(() => setSuccess(''), 4000);
-        closePiCameraPreview();
+
+        // Close preview after successful capture
+        await closePiCameraPreview();
       }
     } catch (err) {
       const errorMsg = err.response?.data?.error?.message ||
@@ -434,8 +496,8 @@ function EntryLane({ latestEntry, allEntries, onEntryAdded }) {
                   onClick={handlePiCameraCapture}
                   disabled={isRecognizing || !previewImage}
                   className={`flex-1 px-4 py-3 rounded-lg font-medium transition-all ${isRecognizing || !previewImage
-                      ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
-                      : 'bg-purple-600 text-white hover:bg-purple-700 hover:shadow-lg'
+                    ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+                    : 'bg-purple-600 text-white hover:bg-purple-700 hover:shadow-lg'
                     }`}
                 >
                   {isRecognizing ? 'Đang nhận diện...' : 'Chụp & Nhận Diện'}

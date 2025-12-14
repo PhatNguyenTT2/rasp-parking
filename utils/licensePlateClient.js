@@ -253,7 +253,110 @@ class LicensePlateClient {
   }
 
   /**
-   * Get Pi Camera preview frame
+   * 🆕 Start Pi Camera preview session (keeps camera open)
+   * @returns {Promise<Object>} Start result
+   */
+  static async startPiCameraPreview() {
+    try {
+      const response = await axios.post(
+        `${LP_SERVICE_URL}/api/camera/preview/start`,
+        {},
+        { timeout: 10000 }
+      )
+
+      return {
+        success: response.data.success,
+        message: response.data.message
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || error.message
+      }
+    }
+  }
+
+  /**
+   * 🆕 Get frame from active preview session (fast, no camera restart)
+   * @returns {Promise<Object>} Preview frame data
+   */
+  static async getPiCameraPreviewFrame() {
+    try {
+      const response = await axios.get(
+        `${LP_SERVICE_URL}/api/camera/preview/frame`,
+        { timeout: 3000 }
+      )
+
+      if (response.data.success) {
+        return {
+          success: true,
+          imageData: response.data.data.imageData,
+          timestamp: response.data.data.timestamp
+        }
+      } else {
+        return {
+          success: false,
+          error: response.data.error
+        }
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || error.message
+      }
+    }
+  }
+
+  /**
+   * 🆕 Stop Pi Camera preview session (closes camera)
+   * @returns {Promise<Object>} Stop result
+   */
+  static async stopPiCameraPreview() {
+    try {
+      const response = await axios.post(
+        `${LP_SERVICE_URL}/api/camera/preview/stop`,
+        {},
+        { timeout: 5000 }
+      )
+
+      return {
+        success: response.data.success,
+        message: response.data.message
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error.response?.data?.error || error.message
+      }
+    }
+  }
+
+  /**
+   * 🆕 Get preview session status
+   * @returns {Promise<Object>} Session status
+   */
+  static async getPiCameraPreviewStatus() {
+    try {
+      const response = await axios.get(
+        `${LP_SERVICE_URL}/api/camera/preview/status`,
+        { timeout: 3000 }
+      )
+
+      return {
+        success: true,
+        ...response.data
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      }
+    }
+  }
+
+  /**
+   * @deprecated Use startPiCameraPreview/getPiCameraPreviewFrame instead
+   * Get Pi Camera preview frame (old method - restarts camera each time)
    * @returns {Promise<Object>} Preview image data
    */
   static async getPiCameraPreview() {

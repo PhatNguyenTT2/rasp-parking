@@ -444,7 +444,64 @@ const parkingLogService = {
   },
 
   /**
-   * Get Pi Camera preview frame
+   * 🆕 Start Pi Camera preview session (keeps camera open)
+   * @returns {Promise<Object>} Start result
+   */
+  startPiCameraPreview: async () => {
+    try {
+      const response = await axios.post(`${API_URL}/parking/logs/camera/preview/start`)
+      return response.data
+    } catch (error) {
+      console.error('Failed to start camera preview:', error)
+      throw error
+    }
+  },
+
+  /**
+   * 🆕 Get frame from active preview session (fast, no camera restart)
+   * @returns {Promise<Object>} Preview frame data
+   */
+  getPiCameraPreviewFrame: async () => {
+    try {
+      const response = await axios.get(`${API_URL}/parking/logs/camera/preview/frame`)
+      return response.data
+    } catch (error) {
+      console.error('Failed to get preview frame:', error)
+      throw error
+    }
+  },
+
+  /**
+   * 🆕 Stop Pi Camera preview session (closes camera)
+   * @returns {Promise<Object>} Stop result
+   */
+  stopPiCameraPreview: async () => {
+    try {
+      const response = await axios.post(`${API_URL}/parking/logs/camera/preview/stop`)
+      return response.data
+    } catch (error) {
+      console.error('Failed to stop camera preview:', error)
+      throw error
+    }
+  },
+
+  /**
+   * 🆕 Get preview session status
+   * @returns {Promise<Object>} Session status
+   */
+  getPiCameraPreviewStatus: async () => {
+    try {
+      const response = await axios.get(`${API_URL}/parking/logs/camera/preview/status`)
+      return response.data
+    } catch (error) {
+      console.error('Failed to get preview status:', error)
+      throw error
+    }
+  },
+
+  /**
+   * @deprecated Use startPiCameraPreview/getPiCameraPreviewFrame instead
+   * Get Pi Camera preview frame (old method - restarts camera each time)
    * @returns {Promise<Object>} Preview image data
    */
   getPiCameraPreview: async () => {

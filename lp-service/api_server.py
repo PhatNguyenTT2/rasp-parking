@@ -12,6 +12,8 @@ from datetime import datetime
 from lp_recognition_service import get_recognition_service
 import cv2
 import numpy as np
+import threading
+import platform
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -31,6 +33,114 @@ try:
 except Exception as e:
     print(f"❌ Failed to initialize recognition service: {e}")
     SERVICE_READY = False
+
+
+# ==========================================
+# Pi Camera Preview Session Manager
+# ==========================================
+class PreviewSessionManager:
+    """
+    Manages continuous Pi Camera preview session
+    Camera stays open for fast frame capture (like rpicam-hello -t 0)
+    """
+    def __init__(self):
+        self.picam = None
+        self.is_active = False
+        self.lock = threading.Lock()
+        self.last_frame = None
+        self.last_frame_time = None
+    
+    def start_preview(self):
+        """Start preview session - open camera once"""
+        with self.lock:
+            if self.is_active:
+                print("⚠️ Preview already active")
+                return {'success': True, 'message': 'Preview already running'}
+            
+            try:
+                from picamera_handler import get_picamera
+                
+                print("🎬 Starting preview session...")
+                self.picam = get_picamera()
+                
+                if not self.picam.is_initialized:
+                    return {'success': False, 'error': 'Camera initialization failed'}
+                
+                self.is_active = True
+                print("✅ Preview session started - camera ready for continuous capture")
+                return {'success': True, 'message': 'Preview session started'}
+                
+            except Exception as e:
+                print(f"❌ Failed to start preview: {e}")
+                self.stop_preview()
+                return {'success': False, 'error': str(e)}
+    
+    def get_frame(self):
+        """Get current frame from active preview session"""
+        with self.lock:
+            if not self.is_active or self.picam is None:
+                return {'success': False, 'error': 'Preview session not active'}
+            
+            try:
+                frame = self.picam.capture_frame()
+                
+                if frame is None:
+                    return {'success': False, 'error': 'Could not capture frame'}
+                
+                # Cache frame
+                self.last_frame = frame
+                self.last_frame_time = datetime.now()
+                
+                # Encode to base64
+                success, buffer = cv2.imencode('.jpg', frame)
+                if not success:
+                    return {'success': False, 'error': 'Could not encode frame'}
+                
+                jpg_base64 = base64.b64encode(buffer).decode('utf-8')
+                
+                return {
+                    'success': True,
+                    'imageData': f'data:image/jpeg;base64,{jpg_base64}',
+                    'timestamp': self.last_frame_time.isoformat()
+                }
+                
+            except Exception as e:
+                print(f"❌ Error capturing frame: {e}")
+                return {'success': False, 'error': str(e)}
+    
+    def stop_preview(self):
+        """Stop preview session - close camera"""
+        with self.lock:
+            if not self.is_active:
+                return {'success': True, 'message': 'Preview not active'}
+            
+            try:
+                if self.picam:
+                    self.picam.close()
+                    self.picam = None
+                
+                self.is_active = False
+                self.last_frame = None
+                self.last_frame_time = None
+                
+                print("🛑 Preview session stopped")
+                return {'success': True, 'message': 'Preview session stopped'}
+                
+            except Exception as e:
+                print(f"⚠️ Error stopping preview: {e}")
+                return {'success': False, 'error': str(e)}
+    
+    def get_status(self):
+        """Get preview session status"""
+        with self.lock:
+            return {
+                'active': self.is_active,
+                'has_frame': self.last_frame is not None,
+                'last_capture': self.last_frame_time.isoformat() if self.last_frame_time else None
+            }
+
+# Global preview session
+preview_session = PreviewSessionManager()
 
 
 def allowed_file(filename):
@@ -319,14 +429,18 @@ def test_camera():
         }), 500
 
 
-@app.route('/api/camera/preview', methods=['GET'])
-def camera_preview():
+@app.route('/api/camera/preview/start', methods=['POST'])
+def start_camera_preview():
     """
-    Get preview frame from Pi Camera as base64 image
-    Used for live preview before capture
-    """
-    import platform
+    🎬 Start continuous Pi Camera preview session
+    Camera stays open for fast frame capture (like rpicam-hello -t 0)
     
+    Response:
+        {
+            "success": true,
+            "message": "Preview session started"
+        }
+    """
     is_pi = platform.machine() in ['armv7l', 'aarch64']
     
     if not is_pi:
@@ -335,59 +449,67 @@ def camera_preview():
             'error': 'Preview only works on Raspberry Pi'
         }), 400
     
-    picam = None
-    try:
-        from picamera_handler import get_picamera
-        import base64
-        
-        print("📸 Initializing Pi Camera for preview...")
-        
-        # Get camera and capture frame
-        picam = get_picamera()
-        
-        if not picam.is_initialized:
-            return jsonify({
-                'success': False,
-                'error': 'Camera not initialized'
-            }), 500
-        
-        frame = picam.capture_frame()
-        
-        if frame is None:
-            return jsonify({
-                'success': False,
-                'error': 'Could not capture preview frame'
-            }), 500
-        
-        # Encode frame as JPEG
-        success, buffer = cv2.imencode('.jpg', frame)
-        if not success:
-            return jsonify({
-                'success': False,
-                'error': 'Could not encode frame'
-            }), 500
-        
-        # Convert to base64
-        jpg_base64 = base64.b64encode(buffer).decode('utf-8')
-        
+    result = preview_session.start_preview()
+    
+    if result['success']:
+        return jsonify(result)
+    else:
+        return jsonify(result), 500
+
+
+@app.route('/api/camera/preview/frame', methods=['GET'])
+def get_preview_frame():
+    """
+    📸 Get frame from active preview session (fast, no camera restart)
+    
+    Response:
+        {
+            "success": true,
+            "data": {
+                "imageData": "data:image/jpeg;base64,...",
+                "timestamp": "2025-12-14T10:30:00"
+            }
+        }
+    """
+    result = preview_session.get_frame()
+    
+    if result['success']:
         return jsonify({
             'success': True,
-            'imageData': f'data:image/jpeg;base64,{jpg_base64}',
-            'timestamp': datetime.now().isoformat()
+            'data': result
         })
-        
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-    finally:
-        # Always release camera after use
-        if picam:
-            try:
-                picam.close()
-            except:
-                pass
+    else:
+        return jsonify(result), 400
+
+
+@app.route('/api/camera/preview/stop', methods=['POST'])
+def stop_camera_preview():
+    """
+    🛑 Stop preview session and close camera
+    
+    Response:
+        {
+            "success": true,
+            "message": "Preview session stopped"
+        }
+    """
+    result = preview_session.stop_preview()
+    return jsonify(result)
+
+
+@app.route('/api/camera/preview/status', methods=['GET'])
+def preview_status():
+    """
+    ℹ️ Get preview session status
+    
+    Response:
+        {
+            "active": true,
+            "has_frame": true,
+            "last_capture": "2025-12-14T10:30:00"
+        }
+    """
+    return jsonify(preview_session.get_status())
 
 
 @app.route('/api/test', methods=['GET'])
@@ -472,7 +594,10 @@ if __name__ == '__main__':
     print(f"📍 Recognize Endpoint: POST http://localhost:5001/api/recognize")
     print(f"📍 Pi Camera Endpoint: POST http://localhost:5001/api/recognize/picamera")
     print(f"📍 Camera Test: GET http://localhost:5001/api/camera/test")
-    print(f"📍 Camera Preview: GET http://localhost:5001/api/camera/preview")
+    print(f"📍 Preview Start: POST http://localhost:5001/api/camera/preview/start")
+    print(f"📍 Preview Frame: GET http://localhost:5001/api/camera/preview/frame")
+    print(f"📍 Preview Stop: POST http://localhost:5001/api/camera/preview/stop")
+    print(f"📍 Preview Status: GET http://localhost:5001/api/camera/preview/status")
     print(f"📍 Test Endpoint: GET http://localhost:5001/api/test")
     print("=" * 60)
     print()

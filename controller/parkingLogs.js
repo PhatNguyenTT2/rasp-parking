@@ -618,8 +618,109 @@ parkingLogsRouter.get('/camera/test', async (request, response) => {
 });
 
 /**
+ * 🆕 POST /api/parking/logs/camera/preview/start
+ * Start Pi Camera preview session (keeps camera open)
+ */
+parkingLogsRouter.post('/camera/preview/start', async (request, response) => {
+  try {
+    const result = await LicensePlateClient.startPiCameraPreview();
+
+    if (result.success) {
+      return response.json({
+        success: true,
+        message: result.message
+      });
+    } else {
+      return response.status(500).json({
+        success: false,
+        error: result.error || 'Failed to start preview session'
+      });
+    }
+  } catch (error) {
+    return response.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 🆕 GET /api/parking/logs/camera/preview/frame
+ * Get frame from active preview session (fast, no camera restart)
+ */
+parkingLogsRouter.get('/camera/preview/frame', async (request, response) => {
+  try {
+    const result = await LicensePlateClient.getPiCameraPreviewFrame();
+
+    if (result.success) {
+      return response.json({
+        success: true,
+        data: {
+          imageData: result.imageData,
+          timestamp: result.timestamp
+        }
+      });
+    } else {
+      return response.status(400).json({
+        success: false,
+        error: result.error || 'Failed to get preview frame'
+      });
+    }
+  } catch (error) {
+    return response.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 🆕 POST /api/parking/logs/camera/preview/stop
+ * Stop Pi Camera preview session (closes camera)
+ */
+parkingLogsRouter.post('/camera/preview/stop', async (request, response) => {
+  try {
+    const result = await LicensePlateClient.stopPiCameraPreview();
+
+    if (result.success) {
+      return response.json({
+        success: true,
+        message: result.message
+      });
+    } else {
+      return response.status(500).json({
+        success: false,
+        error: result.error || 'Failed to stop preview session'
+      });
+    }
+  } catch (error) {
+    return response.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * 🆕 GET /api/parking/logs/camera/preview/status
+ * Get preview session status
+ */
+parkingLogsRouter.get('/camera/preview/status', async (request, response) => {
+  try {
+    const result = await LicensePlateClient.getPiCameraPreviewStatus();
+    return response.json(result);
+  } catch (error) {
+    return response.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @deprecated Use /camera/preview/start and /camera/preview/frame instead
  * GET /api/parking/logs/camera/preview
- * Get preview frame from Pi Camera
+ * Get preview frame from Pi Camera (old method - restarts camera each time)
  */
 parkingLogsRouter.get('/camera/preview', async (request, response) => {
   try {
